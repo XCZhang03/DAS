@@ -46,7 +46,6 @@ class ImageRewardScorer(nn.Module):
         self.load_state_dict(state_dict, strict=False)
         self.eval()
 
-    @torch.no_grad()
     def __call__(self, images, prompts):
         images = (images * 255).round().clamp(0, 255).to(torch.uint8)
         inputs = self.processor(images=images, return_tensors="pt")

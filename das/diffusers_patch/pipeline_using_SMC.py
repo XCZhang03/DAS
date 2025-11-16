@@ -203,30 +203,31 @@ def pipeline_using_smc(
     def _calc_guidance():
         if (i >= start):
             with torch.enable_grad():
-                for idx in range(math.ceil(num_particles / batch_p)): 
-                    tmp_latents = latents[batch_p*idx : batch_p*(idx+1)].detach().to(torch.float32).requires_grad_(True)
-                    # Noise prediction and predicted x_0
-                    tmp_noise_pred, tmp_guidance = _pred_noise(tmp_latents, t)
+                for idx in range(math.ceil(num_particles / batch_p)):
+                    with torch.cuda.amp.autocast(): 
+                        tmp_latents = latents[batch_p*idx : batch_p*(idx+1)].detach().to(torch.float32).requires_grad_(True)
+                        # Noise prediction and predicted x_0
+                        tmp_noise_pred, tmp_guidance = _pred_noise(tmp_latents, t)
 
-                    tmp_pred_original_sample, _ = ddim_prediction_with_logprob(
-                        self.scheduler, tmp_noise_pred, t, tmp_latents, **extra_step_kwargs
-                    )
+                        tmp_pred_original_sample, _ = ddim_prediction_with_logprob(
+                            self.scheduler, tmp_noise_pred, t, tmp_latents, **extra_step_kwargs
+                        )
 
-                    # Calculate rewards
-                    tmp_rewards = reward_fn(_decode(tmp_pred_original_sample)).to(torch.float32)
-                    tmp_log_twist_func = lookforward_fn(tmp_rewards).to(torch.float32)
-        
-                    # Calculate approximate guidance noise for maximizing reward
-                    tmp_approx_guidance = torch.autograd.grad(outputs=tmp_log_twist_func, inputs=tmp_latents, grad_outputs=torch.ones_like(tmp_log_twist_func))[0].detach()
+                        # Calculate rewards
+                        tmp_rewards = reward_fn(_decode(tmp_pred_original_sample)).to(torch.float32)
+                        tmp_log_twist_func = lookforward_fn(tmp_rewards).to(torch.float32)
 
-                    pred_original_sample[batch_p*idx : batch_p*(idx+1)] = tmp_pred_original_sample.detach().clone()
-                    rewards[batch_p*idx : batch_p*(idx+1)] = tmp_rewards.detach().clone()
-                    
-                    noise_pred[batch_p*idx : batch_p*(idx+1)] = tmp_noise_pred.detach().clone()
-                    guidance[batch_p*idx : batch_p*(idx+1)] = tmp_guidance.detach().clone()
+                        # Calculate approximate guidance noise for maximizing reward
+                        tmp_approx_guidance = torch.autograd.grad(outputs=tmp_log_twist_func, inputs=tmp_latents, grad_outputs=torch.ones_like(tmp_log_twist_func))[0].detach()
 
-                    log_twist_func[batch_p*idx : batch_p*(idx+1)] = tmp_log_twist_func.detach().clone()
-                    approx_guidance[batch_p*idx : batch_p*(idx+1)] = tmp_approx_guidance.clone()
+                        pred_original_sample[batch_p*idx : batch_p*(idx+1)] = tmp_pred_original_sample.detach().clone()
+                        rewards[batch_p*idx : batch_p*(idx+1)] = tmp_rewards.detach().clone()
+                        
+                        noise_pred[batch_p*idx : batch_p*(idx+1)] = tmp_noise_pred.detach().clone()
+                        guidance[batch_p*idx : batch_p*(idx+1)] = tmp_guidance.detach().clone()
+
+                        log_twist_func[batch_p*idx : batch_p*(idx+1)] = tmp_log_twist_func.detach().clone()
+                        approx_guidance[batch_p*idx : batch_p*(idx+1)] = tmp_approx_guidance.clone()
             
             if torch.isnan(log_twist_func).any():
                 if verbose:

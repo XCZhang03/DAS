@@ -2,6 +2,8 @@ from PIL import Image
 import os
 from pathlib import Path
 import io
+from torchvision.transforms import Compose, Resize, CenterCrop, Normalize, InterpolationMode
+BICUBIC = InterpolationMode.BICUBIC
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -9,7 +11,7 @@ import torchvision
 from transformers import pipeline
 from diffusers.utils import load_image
 from importlib import resources
-ASSETS_PATH = resources.files("assets")
+# ASSETS_PATH = resources.files("assets")
 
 def jpeg_compressibility(inference_dtype=None, device=None):
     import io
@@ -135,16 +137,35 @@ def ImageReward(
     device=None, 
     return_loss=False, 
 ):
-    from das.scorers.ImageReward_scorer import ImageRewardScorer
+    # from das.scorers.ImageReward_scorer import ImageRewardScorer
 
-    scorer = ImageRewardScorer(dtype=torch.float32, device=device)
-    scorer.requires_grad_(False)
+    # scorer = ImageRewardScorer(dtype=torch.float32, device=device)
+    # scorer.requires_grad_(True)
+
+    # pip install image-reward
+    import ImageReward as RM
+    model = RM.load("ImageReward-v1.0", device=device)
+    def _transform():
+        return Compose([
+            Resize(224, interpolation=BICUBIC),
+            CenterCrop(224),
+            Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        ])
+    
 
     if not return_loss:
         def _fn(images, prompts):
             if images.min() < 0: # normalize unnormalized images
                 images = ((images / 2) + 0.5).clamp(0, 1)
-            scores = scorer(images, prompts)
+            images = _transform()(images).to(device)
+            prompt_input = model.blip.tokenizer(
+                prompts,
+                padding='max_length',
+                truncation=True,
+                max_length=35,
+                return_tensors="pt"
+            ).to(device)
+            scores = model.score_gard(prompt_input.input_ids, prompt_input.attention_mask, images)
             return scores
 
         return _fn
@@ -153,7 +174,16 @@ def ImageReward(
         def loss_fn(images, prompts):
             if images.min() < 0: # normalize unnormalized images
                 images = ((images / 2) + 0.5).clamp(0, 1)
-            scores = scorer(images, prompts)
+            images = _transform()(images).to(device)
+            prompt_input = model.blip.tokenizer(
+                prompts,
+                padding='max_length',
+                truncation=True,
+                max_length=35,
+                return_tensors="pt"
+            ).to(device)
+            scores = model.score_gard(prompt_input.input_ids, prompt_input.attention_mask, images)
+            
 
             loss = - scores
             return loss, scores

@@ -10,3 +10,9 @@ extension
 *.vsix
 *.tar
 *.egg-info
+
+plot*
+
+*.png
+*.svg
+.vscode
